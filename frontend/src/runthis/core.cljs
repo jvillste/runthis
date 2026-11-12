@@ -238,9 +238,10 @@
         task-exists? (some (fn [id]
                              (= task-id id))
                            task-ids)
-        task-runs (filter (fn [run]
-                            (= task-id (:id run)))
-                          runs)
+        task-runs (->> runs
+                       (filter (fn [run]
+                                 (= task-id (:id run))))
+                       (sort-by :number >))
         selected-run (when (and (some? selected-run)
                                 (= task-id (:id selected-run)))
                        selected-run)
