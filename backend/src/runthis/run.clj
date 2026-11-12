@@ -196,15 +196,13 @@
                          (swap! runs-atom update-in [run-id :output] (fnil str "") text))]
             (try
               (binding [*run-output* write!]
-                (write! (str "=== run " (task-id-string task-id) " #" number " ===\n"))
                 (task-function workspace-directory))
-              (write! "=== run succeeded ===\n")
               (swap! runs-atom assoc-in [run-id :status] :succeeded)
               (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
               (write-metadata! metadata-file (get @runs-atom run-id))
               (catch Throwable throwable
-                (write! (str "=== run failed: " (.getMessage throwable) " ===\n"))
                 (swap! runs-atom assoc-in [run-id :status] :failed)
+                (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable))
                 (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
                 (write-metadata! metadata-file (get @runs-atom run-id)))))))
       (run-summary task-id number))))
