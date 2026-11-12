@@ -82,10 +82,17 @@
   (when-some [source-resource (io/resource "runthis/core.clj")]
     (string/includes? (str source-resource) "jar:")))
 
+(defn index-response []
+  (or (response/resource-response "public/index.html")
+      (when (and (not (running-from-jar?))
+                 (.exists (io/file frontend-public-path "index.html")))
+        (response/file-response "index.html" {:root frontend-public-path}))))
+
 (defn wrap-serve-index-html [handler]
   (fn [request]
-    (if (= "/" (:uri request))
-      (or (response/resource-response "public/index.html")
+    (if (or (= "/" (:uri request))
+            (string/starts-with? (:uri request) "/task/"))
+      (or (index-response)
           (handler request))
       (handler request))))
 

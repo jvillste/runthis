@@ -54,7 +54,15 @@ directory and streams its stdout and stderr into the run log.
 
 ## Run dashboard
 
-The UI lists every registered task by key. Pressing **Run** creates:
+The front page lists every registered task by key. Clicking a task opens its
+deep URL:
+
+```
+/task/<task key>
+```
+
+The task page shows a `home/<task key>` breadcrumb, a **Run** button, all runs
+for that task, and the selected run's log. Pressing **Run** creates:
 
 ```
 runs/<task key>/<run number>/
@@ -62,8 +70,8 @@ runs/<task key>/<run number>.log
 ```
 
 The run number is the next available number for that task. The UI polls the
-backend while a run is in progress and appends stdout to the log view. Every log
-on disk is listed, including logs from previous server runs.
+backend while a run is in progress and appends stdout to the log view. Every
+log on disk is listed, including logs from previous server runs.
 
 ## API
 
