@@ -194,7 +194,14 @@
              ":" (pad-number (.getMinutes started-at))
              ":" (pad-number (.getSeconds started-at)))))))
 
-(defn task-link [task-id]
+(defn latest-run-for-task [runs task-id]
+  (->> runs
+       (filter (fn [run]
+                 (= task-id (:id run))))
+       (sort-by :number)
+       last))
+
+(defn task-link [task-id latest-run]
   [:a {:href (easy/href ::task {:task-id (name task-id)})
        :style {:display "block"
                :padding "12px"
@@ -202,7 +209,21 @@
                :border-radius "8px"
                :color "inherit"
                :text-decoration "none"}}
-   [:strong (name task-id)]])
+   [:div {:style {:display "flex"
+                  :justify-content "space-between"
+                  :gap "10px"}}
+    [:div {:style {:display "flex"
+                   :gap "10px"}}
+     [:strong (name task-id)]
+     (when latest-run
+       [:div (or (format-start-time latest-run) "—")])]
+    [:div {:style {:color "gray"}}
+     (if latest-run
+       (str (or (format-duration (run-duration-milliseconds latest-run))
+                "—")
+            " · "
+            (status-label (:status latest-run)))
+       "no runs")]]])
 
 (defn run-row [run selected-run]
   [:div {:style (merge {:display "flex"
@@ -238,7 +259,7 @@
    output])
 
 (defn home-page [_match]
-  (let [{:keys [task-ids]} @state-atom]
+  (let [{:keys [task-ids runs]} @state-atom]
     [:div {:style {:display "flex"
                    :flex-direction "column"
                    :gap "10px"
@@ -249,7 +270,7 @@
        [:div "No tasks registered."]
        (for [task-id task-ids]
          ^{:key (name task-id)}
-         [task-link task-id]))]))
+         [task-link task-id (latest-run-for-task runs task-id)]))]))
 
 (defn task-page [match]
   (let [task-id (task-id-from-match match)
