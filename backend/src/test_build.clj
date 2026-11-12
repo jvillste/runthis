@@ -3,7 +3,7 @@
    [runthis.build :as build]))
 
 (defn build [build-directory]
-  ;; The JVM cannot reliably change its working directory, so runit passes the
+  ;; The JVM cannot reliably change its working directory, so runthis passes the
   ;; build directory to the build function and the command runs there.
   (build/run-command! build-directory
                       "git"

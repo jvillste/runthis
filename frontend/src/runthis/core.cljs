@@ -164,7 +164,7 @@
                    :gap "20px"
                    :margin "30px"
                    :font-family "arial"}}
-     [:h1 "Runit"]
+     [:h1 "Runthis"]
 
      (when error
        [:div {:style {:color "red"}}

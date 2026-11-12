@@ -1,4 +1,4 @@
-# Runit
+# Runthis
 
 Minimal Clojure/ClojureScript CI server.
 

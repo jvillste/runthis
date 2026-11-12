@@ -1,6 +1,6 @@
 # Frontend
 
-Reagent frontend for Runit.
+Reagent frontend for Runthis.
 
 ### Development mode
 

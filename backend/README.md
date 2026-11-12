@@ -1,6 +1,6 @@
 # Backend
 
-Ring/Jetty backend for Runit.
+Ring/Jetty backend for Runthis.
 
 ```
 lein test
@@ -22,8 +22,8 @@ Build scripts are Clojure namespaces that register a function with
 
 ```clojure
 (ns my-build
-  (:require
-   [runthis.build :as build]))
+(:require
+[runthis.build :as build]))
 
 (defn build [build-directory]
   (build/run-command! build-directory "make"))
