@@ -7,7 +7,7 @@
    [reitit.frontend.easy :as easy]))
 
 (defonce state-atom
-  (reagent/atom {:task-keys []
+  (reagent/atom {:task-ids []
                  :runs []
                  :selected-run nil
                  :output ""
@@ -29,7 +29,7 @@
 
 (defn same-run? [first-run second-run]
   (and (some? first-run)
-       (= (:key first-run) (:key second-run))
+       (= (:id first-run) (:id second-run))
        (= (:number first-run) (:number second-run))))
 
 (defn stop-polling []
@@ -39,9 +39,9 @@
 
 (defn fetch-runs []
   (call-api "/api/runs"
-            (fn [{:keys [task-keys runs]}]
+            (fn [{:keys [task-ids runs]}]
               (swap! state-atom assoc
-                     :task-keys task-keys
+                     :task-ids task-ids
                      :runs runs))
             {:error-handler (fn [_error]
                               (swap! state-atom assoc
@@ -60,7 +60,7 @@
                 (when (not= :running status)
                   (stop-polling)
                   (fetch-runs))))
-            {:body {:key (:key run)
+            {:body {:id (:id run)
                     :number (:number run)
                     :offset (:output-offset @state-atom)}
              :error-handler (fn [_error]
@@ -86,7 +86,7 @@
     (start-polling run))
   (fetch-output run))
 
-(defn start-run [key]
+(defn start-run [task-id]
   (stop-polling)
   (swap! state-atom assoc :error nil)
   (call-api "/api/start-run"
@@ -98,23 +98,23 @@
               (fetch-runs)
               (start-polling run)
               (fetch-output run))
-            {:body {:key key}
+            {:body {:id task-id}
              :error-handler (fn [_error]
                               (swap! state-atom assoc
                                      :error "could not start run"))}))
 
-(defn task-key-from-match [match]
-  (when-some [task-key-string (get-in match [:parameters :path :task-key])]
-    (keyword task-key-string)))
+(defn task-id-from-match [match]
+  (when-some [task-id-string (get-in match [:parameters :path :task-id])]
+    (keyword task-id-string)))
 
 (defn initialize-home-page [_match]
   (stop-polling))
 
 (defn initialize-task-page [match]
   (stop-polling)
-  (let [task-key (task-key-from-match match)
+  (let [task-id (task-id-from-match match)
         selected-run (:selected-run @state-atom)]
-    (if (= task-key (:key selected-run))
+    (if (= task-id (:id selected-run))
       (when (= :running (:status selected-run))
         (start-polling selected-run))
       (swap! state-atom assoc
@@ -138,15 +138,15 @@
     :failed "failed"
     "finished"))
 
-(defn task-link [key]
-  [:a {:href (easy/href ::task {:task-key (name key)})
+(defn task-link [task-id]
+  [:a {:href (easy/href ::task {:task-id (name task-id)})
        :style {:display "block"
                :padding "12px"
                :border "1px solid lightgray"
                :border-radius "8px"
                :color "inherit"
                :text-decoration "none"}}
-   [:strong (name key)]])
+   [:strong (name task-id)]])
 
 (defn run-row [run selected-run]
   [:div {:style (merge {:display "flex"
@@ -160,7 +160,7 @@
                          {:background "lightblue"}))
          :onClick (fn []
                     (select-run run))}
-   [:div (str (name (:key run)) " #" (:number run))]
+   [:div (str (name (:id run)) " #" (:number run))]
    [:div {:style {:color "gray"}}
     (status-label (:status run))]])
 
@@ -176,30 +176,30 @@
    output])
 
 (defn home-page [_match]
-  (let [{:keys [task-keys]} @state-atom]
+  (let [{:keys [task-ids]} @state-atom]
     [:div {:style {:display "flex"
                    :flex-direction "column"
                    :gap "10px"
                    :width "100%"
                    :max-width "700px"}}
      [:h1 "Tasks"]
-     (if (empty? task-keys)
+     (if (empty? task-ids)
        [:div "No tasks registered."]
-       (for [key task-keys]
-         ^{:key (name key)}
-         [task-link key]))]))
+       (for [task-id task-ids]
+         ^{:key (name task-id)}
+         [task-link task-id]))]))
 
 (defn task-page [match]
-  (let [task-key (task-key-from-match match)
-        {:keys [task-keys runs selected-run output]} @state-atom
-        task-exists? (some (fn [key]
-                             (= task-key key))
-                           task-keys)
+  (let [task-id (task-id-from-match match)
+        {:keys [task-ids runs selected-run output]} @state-atom
+        task-exists? (some (fn [id]
+                             (= task-id id))
+                           task-ids)
         task-runs (filter (fn [run]
-                            (= task-key (:key run)))
+                            (= task-id (:id run)))
                           runs)
         selected-run (when (and (some? selected-run)
-                                (= task-key (:key selected-run)))
+                                (= task-id (:id selected-run)))
                        selected-run)
         output (if selected-run
                  output
@@ -214,7 +214,7 @@
            :style {:color "inherit"}}
        "home"]
       "/"
-      (name task-key)]
+      (name task-id)]
 
      (if task-exists?
        [:div {:style {:display "flex"
@@ -223,10 +223,10 @@
         [:div {:style {:display "flex"
                        :justify-content "space-between"
                        :align-items "center"}}
-         [:h1 (name task-key)]
+         [:h1 (name task-id)]
          [button "Run"
           (fn []
-            (start-run task-key))]]
+            (start-run task-id))]]
 
         [:div {:style {:display "flex"
                        :gap "30px"
@@ -239,7 +239,7 @@
           (if (empty? task-runs)
             [:div "No runs yet."]
             (for [run task-runs]
-              ^{:key (str (name (:key run)) "-" (:number run))}
+              ^{:key (str (name (:id run)) "-" (:number run))}
               [run-row run selected-run]))]
 
          [:div {:style {:flex "2"
@@ -255,9 +255,9 @@
   [["/" {:name ::home
          :view home-page
          :initialize initialize-home-page}]
-   ["/task/:task-key" {:name ::task
-                       :view task-page
-                       :initialize initialize-task-page}]])
+   ["/task/:task-id" {:name ::task
+                      :view task-page
+                      :initialize initialize-task-page}]])
 
 (defn root-view []
   (let [{:keys [error]} @state-atom

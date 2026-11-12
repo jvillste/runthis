@@ -61,21 +61,21 @@
   (transit-response (run/list-runs)))
 
 (defn start-run-handler [request]
-  (let [key (run/normalize-task-key (:key (read-transit-body request)))]
-    (if (and key (run/task-exists? key))
-      (transit-response (run/start-run! key))
+  (let [task-id (run/normalize-task-id (:id (read-transit-body request)))]
+    (if (and task-id (run/task-exists? task-id))
+      (transit-response (run/start-run! task-id))
       (assoc (transit-response {:error "unknown task"})
              :status 400))))
 
 (defn run-output-handler [request]
-  (let [{:keys [key number offset]} (read-transit-body request)
-        key (run/normalize-task-key key)
+  (let [{:keys [id number offset]} (read-transit-body request)
+        task-id (run/normalize-task-id id)
         number (if (string? number)
                  (parse-long number)
                  number)]
-    (if (and key (number? number))
-      (transit-response (run/output-for-run key number offset))
-      (assoc (transit-response {:error "task key and run number are required"})
+    (if (and task-id (number? number))
+      (transit-response (run/output-for-run task-id number offset))
+      (assoc (transit-response {:error "task id and run number are required"})
              :status 400))))
 
 (defn running-from-jar? []

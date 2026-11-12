@@ -14,26 +14,26 @@
 
 (def ^:dynamic *run-output* nil)
 
-(defn register-task! [key function]
-  (swap! tasks-atom assoc key function))
+(defn register-task! [task-id function]
+  (swap! tasks-atom assoc task-id function))
 
-(defn task-exists? [key]
-  (contains? @tasks-atom key))
+(defn task-exists? [task-id]
+  (contains? @tasks-atom task-id))
 
-(defn normalize-task-key [key]
+(defn normalize-task-id [task-id]
   (cond
-    (keyword? key) key
-    (string? key) (keyword key)
+    (keyword? task-id) task-id
+    (string? task-id) (keyword task-id)
     :else nil))
 
-(defn task-key-string [key]
-  (name key))
+(defn task-id-string [task-id]
+  (name task-id))
 
-(defn run-directory [key number]
-  (io/file runs-directory (task-key-string key) (str number)))
+(defn run-directory [task-id number]
+  (io/file runs-directory (task-id-string task-id) (str number)))
 
-(defn log-file [key number]
-  (io/file runs-directory (task-key-string key) (str number ".log")))
+(defn log-file [task-id number]
+  (io/file runs-directory (task-id-string task-id) (str number ".log")))
 
 (defn next-run-number [run-numbers]
   (if (empty? run-numbers)
@@ -60,23 +60,23 @@
   (when (.exists directory)
     (.listFiles directory)))
 
-(defn existing-run-numbers [key]
-  (->> (directory-files (io/file runs-directory (task-key-string key)))
+(defn existing-run-numbers [task-id]
+  (->> (directory-files (io/file runs-directory (task-id-string task-id)))
        (keep (fn [file]
                (when (.isDirectory file)
                  (parse-long (.getName file)))))
        set))
 
-(defn next-run-number-for-task [key]
-  (next-run-number (existing-run-numbers key)))
+(defn next-run-number-for-task [task-id]
+  (next-run-number (existing-run-numbers task-id)))
 
-(defn create-run-directory! [key number]
-  (let [directory (run-directory key number)]
+(defn create-run-directory! [task-id number]
+  (let [directory (run-directory task-id number)]
     (.mkdirs directory)
     directory))
 
-(defn log-numbers [key]
-  (->> (directory-files (io/file runs-directory (task-key-string key)))
+(defn log-numbers [task-id]
+  (->> (directory-files (io/file runs-directory (task-id-string task-id)))
        (keep (fn [file]
                (when-some [[_ number-string] (re-matches #"(\d+)\.log"
                                                          (.getName file))]
@@ -84,7 +84,7 @@
        sort
        vec))
 
-(defn task-key-strings []
+(defn task-id-strings []
   (->> (directory-files (io/file runs-directory))
        (filter (fn [file]
                  (.isDirectory file)))
@@ -92,36 +92,36 @@
               (.getName file)))
        sort))
 
-(defn run-summary [key number]
-  (let [run (get @runs-atom [key number])]
-    {:key key
+(defn run-summary [task-id number]
+  (let [run (get @runs-atom [task-id number])]
+    {:id task-id
      :number number
      :status (:status run :finished)
-     :run-directory (str (run-directory key number))
-     :log-file (str (log-file key number))}))
+     :run-directory (str (run-directory task-id number))
+     :log-file (str (log-file task-id number))}))
 
 (defn run-identifiers []
-  (let [registered-runs (for [key (keys @tasks-atom)
-                              number (log-numbers key)]
-                          [key number])
-        logged-runs (for [key-string (task-key-strings)
-                          :let [key (keyword key-string)]
-                          number (log-numbers key)]
-                      [key number])]
+  (let [registered-runs (for [task-id (keys @tasks-atom)
+                              number (log-numbers task-id)]
+                          [task-id number])
+        logged-runs (for [id-string (task-id-strings)
+                          :let [task-id (keyword id-string)]
+                          number (log-numbers task-id)]
+                      [task-id number])]
     (->> (concat registered-runs
                  logged-runs
                  (keys @runs-atom))
          distinct
-         (sort-by (fn [[key number]]
-                    [(task-key-string key) number]))
+         (sort-by (fn [[task-id number]]
+                    [(task-id-string task-id) number]))
          vec)))
 
 (defn list-runs []
-  {:task-keys (->> (keys @tasks-atom)
-                   (sort-by task-key-string)
-                   vec)
-   :runs (mapv (fn [[key number]]
-                 (run-summary key number))
+  {:task-ids (->> (keys @tasks-atom)
+                  (sort-by task-id-string)
+                  vec)
+   :runs (mapv (fn [[task-id number]]
+                 (run-summary task-id number))
                (run-identifiers))})
 
 (defn write-output! [text]
@@ -142,18 +142,18 @@
                         {:command command
                          :exit-value exit-value}))))))
 
-(defn run-task! [key]
-  (let [task-function (get @tasks-atom key)]
+(defn run-task! [task-id]
+  (let [task-function (get @tasks-atom task-id)]
     (when-not task-function
-      (throw (ex-info "unknown task" {:key key})))
+      (throw (ex-info "unknown task" {:id task-id})))
     (let [[number run-directory run-log-file]
           (locking run-lock
-            (let [number (next-run-number-for-task key)
-                  run-directory (create-run-directory! key number)
-                  run-log-file (log-file key number)]
+            (let [number (next-run-number-for-task task-id)
+                  run-directory (create-run-directory! task-id number)
+                  run-log-file (log-file task-id number)]
               [number run-directory run-log-file]))
-          run-id [key number]
-          run {:key key
+          run-id [task-id number]
+          run {:id task-id
                :number number
                :status :running
                :run-directory (str run-directory)
@@ -169,7 +169,7 @@
                          (swap! runs-atom update-in [run-id :output] (fnil str "") text))]
             (try
               (binding [*run-output* write!]
-                (write! (str "=== run " (task-key-string key) " #" number " ===\n"))
+                (write! (str "=== run " (task-id-string task-id) " #" number " ===\n"))
                 (task-function run-directory))
               (write! "=== run succeeded ===\n")
               (swap! runs-atom assoc-in [run-id :status] :succeeded)
@@ -178,12 +178,12 @@
                 (swap! runs-atom assoc-in [run-id :status] :failed))
               (finally
                 (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now))))))))
-      (run-summary key number))))
+      (run-summary task-id number))))
 
-(defn start-run! [key]
-  (when-not (task-exists? key)
-    (throw (ex-info "unknown task" {:key key})))
-  (run-task! key))
+(defn start-run! [task-id]
+  (when-not (task-exists? task-id)
+    (throw (ex-info "unknown task" {:id task-id})))
+  (run-task! task-id))
 
 (defn normalize-offset [offset]
   (cond
@@ -199,10 +199,10 @@
   (is (= 5
          (normalize-offset "5"))))
 
-(defn output-for-run [key number offset]
-  (let [run-id [key number]
+(defn output-for-run [task-id number offset]
+  (let [run-id [task-id number]
         active-output (get-in @runs-atom [run-id :output])
-        run-log-file (log-file key number)
+        run-log-file (log-file task-id number)
         output (if (some? active-output)
                  active-output
                  (if (.exists run-log-file)
@@ -210,7 +210,7 @@
                    ""))
         offset (normalize-offset offset)
         next-offset (count output)]
-    {:key key
+    {:id task-id
      :number number
      :output (subs output (min offset next-offset))
      :next-offset next-offset

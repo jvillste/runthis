@@ -54,19 +54,19 @@ directory and streams its stdout and stderr into the run log.
 
 ## Run dashboard
 
-The front page lists every registered task by key. Clicking a task opens its
+The front page lists every registered task by id. Clicking a task opens its
 deep URL:
 
 ```
-/task/<task key>
+/task/<task id>
 ```
 
-The task page shows a `home/<task key>` breadcrumb, a **Run** button, all runs
+The task page shows a `home/<task id>` breadcrumb, a **Run** button, all runs
 for that task, and the selected run's log. Pressing **Run** creates:
 
 ```
-runs/<task key>/<run number>/
-runs/<task key>/<run number>.log
+runs/<task id>/<run number>/
+runs/<task id>/<run number>.log
 ```
 
 The run number is the next available number for that task. The UI polls the
@@ -77,8 +77,8 @@ log on disk is listed, including logs from previous server runs.
 
 ```
 POST /api/runs
-POST /api/start-run          {:key :runthis}
-POST /api/run-output         {:key :runthis :number 1 :offset 0}
+POST /api/start-run          {:id :runthis}
+POST /api/run-output         {:id :runthis :number 1 :offset 0}
 ```
 
 `/api/run-output` returns the next chunk of output and the current status.
