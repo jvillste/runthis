@@ -17,3 +17,6 @@ http://localhost:3000, so start the backend too.
 ```
 npx shadow-cljs release app
 ```
+
+The root `build.sh` runs this release build and copies `public` into
+`backend/resources/public` before creating the standalone backend jar.

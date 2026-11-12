@@ -10,4 +10,4 @@
 
 (defn restart []
   (runthis/stop-server)
-  (repl/refresh :after 'runna/start-server))
+  (repl/refresh :after 'runthis/start-server))

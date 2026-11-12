@@ -40,8 +40,29 @@ npx shadow-cljs watch app
 Open http://localhost:3000 while the backend is running. The frontend calls
 `/api/get-hello` and shows the result on the page.
 
-To build an optimized frontend bundle:
+## Building a single jar
 
 ```
+./build.sh
+```
+
+The script builds an optimized frontend bundle, copies `frontend/public` into
+`backend/resources/public`, and runs `lein uberjar`. The frontend files are
+then packaged inside the standalone jar and served from the classpath.
+
+Run the jar from any directory:
+
+```
+java -jar backend/target/uberjar/ci-server-0.1.0-SNAPSHOT-standalone.jar
+```
+
+To build the jar manually:
+
+```
+cd frontend
 npx shadow-cljs release app
+mkdir -p ../backend/resources/public
+cp -R public/. ../backend/resources/public/
+cd ../backend
+lein uberjar
 ```

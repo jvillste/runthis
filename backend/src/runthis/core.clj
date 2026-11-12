@@ -1,10 +1,13 @@
 (ns runthis.core
   (:gen-class)
   (:require
+   [clojure.java.io :as io]
+   [clojure.string :as string]
    [clojure.test :refer [deftest is]]
    [cognitect.transit :as transit]
    [ring.adapter.jetty :as jetty]
    [ring.middleware.file :as file]
+   [ring.middleware.resource :as resource]
    [ring.util.response :as response])
   (:import
    (java.io ByteArrayOutputStream)))
@@ -52,16 +55,27 @@
       (assoc (transit-response "name is required")
              :status 400))))
 
-(defn wrap-serve-index-html [handler root]
+(defn running-from-jar? []
+  (when-some [source-resource (io/resource "runthis/core.clj")]
+    (string/includes? (str source-resource) "jar:")))
+
+(defn wrap-serve-index-html [handler]
   (fn [request]
     (if (= "/" (:uri request))
-      (or (response/file-response "/index.html" {:root root})
+      (or (response/resource-response "public/index.html")
           (handler request))
       (handler request))))
 
+(defn wrap-frontend-directory [handler]
+  (if (and (not (running-from-jar?))
+           (.exists (io/file frontend-public-path)))
+    (file/wrap-file handler frontend-public-path)
+    handler))
+
 (def handler (-> not-found-handler
-                 (file/wrap-file frontend-public-path)
-                 (wrap-serve-index-html frontend-public-path)
+                 (resource/wrap-resource "public")
+                 (wrap-serve-index-html)
+                 (wrap-frontend-directory)
                  (wrap-api-method "/api/get-hello" hello-handler)))
 
 (defonce server-atom (atom nil))
