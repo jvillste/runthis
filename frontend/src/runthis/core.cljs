@@ -178,6 +178,22 @@
           (pos? minutes) (str minutes "m " seconds "s")
           :else (str seconds "s"))))))
 
+(defn pad-number [number]
+  (if (< number 10)
+    (str "0" number)
+    (str number)))
+
+(defn format-start-time [run]
+  (when-some [started-at-string (:started-at run)]
+    (let [started-at (js/Date. started-at-string)]
+      (when-not (js/isNaN (.getTime started-at))
+        (str (.getFullYear started-at)
+             "-" (pad-number (inc (.getMonth started-at)))
+             "-" (pad-number (.getDate started-at))
+             " " (pad-number (.getHours started-at))
+             ":" (pad-number (.getMinutes started-at))
+             ":" (pad-number (.getSeconds started-at)))))))
+
 (defn task-link [task-id]
   [:a {:href (easy/href ::task {:task-id (name task-id)})
        :style {:display "block"
@@ -200,7 +216,10 @@
                          {:background "lightblue"}))
          :onClick (fn []
                     (select-run run))}
-   [:div (str "#" (:number run))]
+   [:div {:style {:display "flex"
+                  :gap "10px"}}
+    [:div (str "#" (:number run))]
+    [:div (or (format-start-time run) "—")]]
    [:div {:style {:color "gray"}}
     (str (or (format-duration (run-duration-milliseconds run))
              "—")
