@@ -8,7 +8,9 @@
    [ring.adapter.jetty :as jetty]
    [ring.middleware.file :as file]
    [ring.middleware.resource :as resource]
-   [ring.util.response :as response])
+   [ring.util.response :as response]
+   [runthis.build :as build]
+   [test-build])
   (:import
    (java.io ByteArrayOutputStream)))
 
@@ -55,6 +57,27 @@
       (assoc (transit-response "name is required")
              :status 400))))
 
+(defn build-list-handler [_request]
+  (transit-response (build/list-builds)))
+
+(defn start-build-handler [request]
+  (let [key (build/normalize-build-key (:key (read-transit-body request)))]
+    (if (and key (build/build-exists? key))
+      (transit-response (build/start-build! key))
+      (assoc (transit-response {:error "unknown build"})
+             :status 400))))
+
+(defn build-output-handler [request]
+  (let [{:keys [key number offset]} (read-transit-body request)
+        key (build/normalize-build-key key)
+        number (if (string? number)
+                 (parse-long number)
+                 number)]
+    (if (and key (number? number))
+      (transit-response (build/output-for-run key number offset))
+      (assoc (transit-response {:error "build key and number are required"})
+             :status 400))))
+
 (defn running-from-jar? []
   (when-some [source-resource (io/resource "runthis/core.clj")]
     (string/includes? (str source-resource) "jar:")))
@@ -76,7 +99,10 @@
                  (resource/wrap-resource "public")
                  (wrap-serve-index-html)
                  (wrap-frontend-directory)
-                 (wrap-api-method "/api/get-hello" hello-handler)))
+                 (wrap-api-method "/api/get-hello" hello-handler)
+                 (wrap-api-method "/api/builds" build-list-handler)
+                 (wrap-api-method "/api/start-build" start-build-handler)
+                 (wrap-api-method "/api/build-output" build-output-handler)))
 
 (defonce server-atom (atom nil))
 

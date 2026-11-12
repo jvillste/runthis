@@ -1,6 +1,6 @@
 # Frontend
 
-Reagent frontend for the CI server.
+Reagent frontend for Runit.
 
 ### Development mode
 
@@ -11,6 +11,9 @@ npx shadow-cljs watch app
 
 The build writes `public/js/app.js`. The backend serves `public` at
 http://localhost:3000, so start the backend too.
+
+The UI lists registered build scripts, starts builds, and polls the backend for
+live build output. Logs from all previous builds are listed and can be opened.
 
 ### Building for production
 
