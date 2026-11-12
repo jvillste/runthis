@@ -1,0 +1,4 @@
+/public/js
+/out
+node_modules
+.shadow-cljs
