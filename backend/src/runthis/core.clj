@@ -9,8 +9,8 @@
    [ring.middleware.file :as file]
    [ring.middleware.resource :as resource]
    [ring.util.response :as response]
-   [runthis.build :as build]
-   [test-build])
+   [runthis.run :as run]
+   [test-task])
   (:import
    (java.io ByteArrayOutputStream)))
 
@@ -57,25 +57,25 @@
       (assoc (transit-response "name is required")
              :status 400))))
 
-(defn build-list-handler [_request]
-  (transit-response (build/list-builds)))
+(defn run-list-handler [_request]
+  (transit-response (run/list-runs)))
 
-(defn start-build-handler [request]
-  (let [key (build/normalize-build-key (:key (read-transit-body request)))]
-    (if (and key (build/build-exists? key))
-      (transit-response (build/start-build! key))
-      (assoc (transit-response {:error "unknown build"})
+(defn start-run-handler [request]
+  (let [key (run/normalize-task-key (:key (read-transit-body request)))]
+    (if (and key (run/task-exists? key))
+      (transit-response (run/start-run! key))
+      (assoc (transit-response {:error "unknown task"})
              :status 400))))
 
-(defn build-output-handler [request]
+(defn run-output-handler [request]
   (let [{:keys [key number offset]} (read-transit-body request)
-        key (build/normalize-build-key key)
+        key (run/normalize-task-key key)
         number (if (string? number)
                  (parse-long number)
                  number)]
     (if (and key (number? number))
-      (transit-response (build/output-for-run key number offset))
-      (assoc (transit-response {:error "build key and number are required"})
+      (transit-response (run/output-for-run key number offset))
+      (assoc (transit-response {:error "task key and run number are required"})
              :status 400))))
 
 (defn running-from-jar? []
@@ -100,9 +100,9 @@
                  (wrap-serve-index-html)
                  (wrap-frontend-directory)
                  (wrap-api-method "/api/get-hello" hello-handler)
-                 (wrap-api-method "/api/builds" build-list-handler)
-                 (wrap-api-method "/api/start-build" start-build-handler)
-                 (wrap-api-method "/api/build-output" build-output-handler)))
+                 (wrap-api-method "/api/runs" run-list-handler)
+                 (wrap-api-method "/api/start-run" start-run-handler)
+                 (wrap-api-method "/api/run-output" run-output-handler)))
 
 (defonce server-atom (atom nil))
 

@@ -1,4 +1,4 @@
-(ns runthis.build
+(ns runthis.run
   (:require
    [clojure.java.io :as io]
    [clojure.java.process :as process]
@@ -6,77 +6,77 @@
   (:import
    (java.time Instant)))
 
-(def builds-directory "builds")
+(def runs-directory "runs")
 
-(defonce builds-atom (atom {}))
+(defonce tasks-atom (atom {}))
 (defonce runs-atom (atom {}))
-(defonce build-lock (Object.))
+(defonce run-lock (Object.))
 
-(def ^:dynamic *build-output* nil)
+(def ^:dynamic *run-output* nil)
 
-(defn register-build! [key function]
-  (swap! builds-atom assoc key function))
+(defn register-task! [key function]
+  (swap! tasks-atom assoc key function))
 
-(defn build-exists? [key]
-  (contains? @builds-atom key))
+(defn task-exists? [key]
+  (contains? @tasks-atom key))
 
-(defn normalize-build-key [key]
+(defn normalize-task-key [key]
   (cond
     (keyword? key) key
     (string? key) (keyword key)
     :else nil))
 
-(defn build-key-string [key]
+(defn task-key-string [key]
   (name key))
 
-(defn build-directory [key number]
-  (io/file builds-directory (build-key-string key) (str number)))
+(defn run-directory [key number]
+  (io/file runs-directory (task-key-string key) (str number)))
 
 (defn log-file [key number]
-  (io/file builds-directory (build-key-string key) (str number ".log")))
+  (io/file runs-directory (task-key-string key) (str number ".log")))
 
-(defn next-build-number [build-numbers]
-  (if (empty? build-numbers)
+(defn next-run-number [run-numbers]
+  (if (empty? run-numbers)
     1
-    (inc (apply max build-numbers))))
+    (inc (apply max run-numbers))))
 
-(deftest test-next-build-number
+(deftest test-next-run-number
   (is (= 1
-         (next-build-number #{})))
+         (next-run-number #{})))
   (is (= 3
-         (next-build-number #{1 2})))
+         (next-run-number #{1 2})))
   (is (= 4
-         (next-build-number #{1 3}))))
+         (next-run-number #{1 3}))))
 
-(deftest test-build-directory
-  (is (= (io/file "builds" "runthis" "2")
-         (build-directory :runthis 2))))
+(deftest test-run-directory
+  (is (= (io/file "runs" "runthis" "2")
+         (run-directory :runthis 2))))
 
 (deftest test-log-file
-  (is (= (io/file "builds" "runthis" "2.log")
+  (is (= (io/file "runs" "runthis" "2.log")
          (log-file :runthis 2))))
 
 (defn directory-files [directory]
   (when (.exists directory)
     (.listFiles directory)))
 
-(defn existing-build-numbers [key]
-  (->> (directory-files (io/file builds-directory (build-key-string key)))
+(defn existing-run-numbers [key]
+  (->> (directory-files (io/file runs-directory (task-key-string key)))
        (keep (fn [file]
                (when (.isDirectory file)
                  (parse-long (.getName file)))))
        set))
 
-(defn next-build-number-for-key [key]
-  (next-build-number (existing-build-numbers key)))
+(defn next-run-number-for-task [key]
+  (next-run-number (existing-run-numbers key)))
 
-(defn create-build-directory! [key number]
-  (let [directory (build-directory key number)]
+(defn create-run-directory! [key number]
+  (let [directory (run-directory key number)]
     (.mkdirs directory)
     directory))
 
 (defn log-numbers [key]
-  (->> (directory-files (io/file builds-directory (build-key-string key)))
+  (->> (directory-files (io/file runs-directory (task-key-string key)))
        (keep (fn [file]
                (when-some [[_ number-string] (re-matches #"(\d+)\.log"
                                                          (.getName file))]
@@ -84,8 +84,8 @@
        sort
        vec))
 
-(defn build-key-strings []
-  (->> (directory-files (io/file builds-directory))
+(defn task-key-strings []
+  (->> (directory-files (io/file runs-directory))
        (filter (fn [file]
                  (.isDirectory file)))
        (map (fn [file]
@@ -97,14 +97,14 @@
     {:key key
      :number number
      :status (:status run :finished)
-     :build-directory (str (build-directory key number))
+     :run-directory (str (run-directory key number))
      :log-file (str (log-file key number))}))
 
 (defn run-identifiers []
-  (let [registered-runs (for [key (keys @builds-atom)
+  (let [registered-runs (for [key (keys @tasks-atom)
                               number (log-numbers key)]
                           [key number])
-        logged-runs (for [key-string (build-key-strings)
+        logged-runs (for [key-string (task-key-strings)
                           :let [key (keyword key-string)]
                           number (log-numbers key)]
                       [key number])]
@@ -113,20 +113,20 @@
                  (keys @runs-atom))
          distinct
          (sort-by (fn [[key number]]
-                    [(build-key-string key) number]))
+                    [(task-key-string key) number]))
          vec)))
 
-(defn list-builds []
-  {:build-keys (->> (keys @builds-atom)
-                    (sort-by build-key-string)
-                    vec)
+(defn list-runs []
+  {:task-keys (->> (keys @tasks-atom)
+                   (sort-by task-key-string)
+                   vec)
    :runs (mapv (fn [[key number]]
                  (run-summary key number))
                (run-identifiers))})
 
 (defn write-output! [text]
-  (when *build-output*
-    (*build-output* text)))
+  (when *run-output*
+    (*run-output* text)))
 
 (defn run-command! [directory & command]
   (let [process-handle (apply process/start {:dir directory
@@ -142,48 +142,48 @@
                         {:command command
                          :exit-value exit-value}))))))
 
-(defn run-build! [key]
-  (let [build-function (get @builds-atom key)]
-    (when-not build-function
-      (throw (ex-info "unknown build" {:key key})))
-    (let [[number build-directory build-log-file]
-          (locking build-lock
-            (let [number (next-build-number-for-key key)
-                  build-directory (create-build-directory! key number)
-                  build-log-file (log-file key number)]
-              [number build-directory build-log-file]))
+(defn run-task! [key]
+  (let [task-function (get @tasks-atom key)]
+    (when-not task-function
+      (throw (ex-info "unknown task" {:key key})))
+    (let [[number run-directory run-log-file]
+          (locking run-lock
+            (let [number (next-run-number-for-task key)
+                  run-directory (create-run-directory! key number)
+                  run-log-file (log-file key number)]
+              [number run-directory run-log-file]))
           run-id [key number]
           run {:key key
                :number number
                :status :running
-               :build-directory (str build-directory)
-               :log-file (str build-log-file)
+               :run-directory (str run-directory)
+               :log-file (str run-log-file)
                :started-at (str (Instant/now))
                :output ""}]
       (swap! runs-atom assoc run-id run)
       (future
-        (with-open [writer (io/writer build-log-file)]
+        (with-open [writer (io/writer run-log-file)]
           (let [write! (fn [text]
                          (.write writer text)
                          (.flush writer)
                          (swap! runs-atom update-in [run-id :output] (fnil str "") text))]
             (try
-              (binding [*build-output* write!]
-                (write! (str "=== build " (build-key-string key) " #" number " ===\n"))
-                (build-function build-directory))
-              (write! "=== build succeeded ===\n")
+              (binding [*run-output* write!]
+                (write! (str "=== run " (task-key-string key) " #" number " ===\n"))
+                (task-function run-directory))
+              (write! "=== run succeeded ===\n")
               (swap! runs-atom assoc-in [run-id :status] :succeeded)
               (catch Throwable throwable
-                (write! (str "=== build failed: " (.getMessage throwable) " ===\n"))
+                (write! (str "=== run failed: " (.getMessage throwable) " ===\n"))
                 (swap! runs-atom assoc-in [run-id :status] :failed))
               (finally
                 (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now))))))))
       (run-summary key number))))
 
-(defn start-build! [key]
-  (when-not (build-exists? key)
-    (throw (ex-info "unknown build" {:key key})))
-  (run-build! key))
+(defn start-run! [key]
+  (when-not (task-exists? key)
+    (throw (ex-info "unknown task" {:key key})))
+  (run-task! key))
 
 (defn normalize-offset [offset]
   (cond
@@ -202,11 +202,11 @@
 (defn output-for-run [key number offset]
   (let [run-id [key number]
         active-output (get-in @runs-atom [run-id :output])
-        build-log-file (log-file key number)
+        run-log-file (log-file key number)
         output (if (some? active-output)
                  active-output
-                 (if (.exists build-log-file)
-                   (slurp build-log-file)
+                 (if (.exists run-log-file)
+                   (slurp run-log-file)
                    ""))
         offset (normalize-offset offset)
         next-offset (count output)]

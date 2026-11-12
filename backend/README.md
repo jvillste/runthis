@@ -15,49 +15,49 @@ lein run 3001
 
 During development the backend serves the frontend from `../frontend/public`.
 
-## Build scripts
+## Tasks
 
-Build scripts are Clojure namespaces that register a function with
-`runthis.build/register-build!`:
+Tasks are Clojure namespaces that register a function with
+`runthis.run/register-task!`:
 
 ```clojure
-(ns my-build
-(:require
-[runthis.build :as build]))
+(ns my-task
+  (:require
+   [runthis.run :as run]))
 
-(defn build [build-directory]
-  (build/run-command! build-directory "make"))
+(defn execute [run-directory]
+  (run/run-command! run-directory "make"))
 
-(build/register-build! :my-build build)
+(run/register-task! :my-task execute)
 ```
 
-The build function receives the build directory. `run-command!` runs a command
-in that directory and streams stdout and stderr into the build log.
+The task function receives the run directory. `run-command!` runs a command in
+that directory and streams stdout and stderr into the run log.
 
-The first build script is `src/test_build.clj`. It clones
-`https://github.com/jvillste/runthis.git` into the build directory.
+The first task is `src/test_task.clj`. It clones
+`https://github.com/jvillste/runthis.git` into the run directory.
 
-## Build directories and logs
+## Run directories and logs
 
 Each run creates:
 
 ```
-builds/<build key>/<build number>/
-builds/<build key>/<build number>.log
+runs/<task key>/<run number>/
+runs/<task key>/<run number>.log
 ```
 
-The build number is the next available number for that key. Logs from all
-runs remain under `builds/` and are listed by the UI.
+The run number is the next available number for that task. Logs from all runs
+remain under `runs/` and are listed by the UI.
 
 ## API
 
 ```
-POST /api/builds
-POST /api/start-build        {:key :runthis}
-POST /api/build-output       {:key :runthis :number 1 :offset 0}
+POST /api/runs
+POST /api/start-run          {:key :runthis}
+POST /api/run-output         {:key :runthis :number 1 :offset 0}
 ```
 
-`/api/build-output` returns the next chunk of output and the current status.
+`/api/run-output` returns the next chunk of output and the current status.
 
 ## Building a single jar
 

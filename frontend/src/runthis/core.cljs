@@ -5,7 +5,7 @@
    [reagent.dom :as dom]))
 
 (defonce state-atom
-  (reagent/atom {:build-keys []
+  (reagent/atom {:task-keys []
                  :runs []
                  :selected-run nil
                  :output ""
@@ -34,18 +34,18 @@
     (js/clearInterval timer)
     (reset! poll-timer-atom nil)))
 
-(defn fetch-builds []
-  (call-api "/api/builds"
-            (fn [{:keys [build-keys runs]}]
+(defn fetch-runs []
+  (call-api "/api/runs"
+            (fn [{:keys [task-keys runs]}]
               (swap! state-atom assoc
-                     :build-keys build-keys
+                     :task-keys task-keys
                      :runs runs))
             {:error-handler (fn [_error]
                               (swap! state-atom assoc
-                                     :error "could not load builds"))}))
+                                     :error "could not load runs"))}))
 
 (defn fetch-output [run]
-  (call-api "/api/build-output"
+  (call-api "/api/run-output"
             (fn [{:keys [output next-offset status]}]
               (when (same-run? run (:selected-run @state-atom))
                 (swap! state-atom
@@ -56,14 +56,14 @@
                              (assoc-in [:selected-run :status] status))))
                 (when (not= :running status)
                   (stop-polling)
-                  (fetch-builds))))
+                  (fetch-runs))))
             {:body {:key (:key run)
                     :number (:number run)
                     :offset (:output-offset @state-atom)}
              :error-handler (fn [_error]
                               (stop-polling)
                               (swap! state-atom assoc
-                                     :error "could not load build output"))}))
+                                     :error "could not load run output"))}))
 
 (defn start-polling [run]
   (stop-polling)
@@ -83,22 +83,22 @@
     (start-polling run))
   (fetch-output run))
 
-(defn start-build [key]
+(defn start-run [key]
   (stop-polling)
   (swap! state-atom assoc :error nil)
-  (call-api "/api/start-build"
+  (call-api "/api/start-run"
             (fn [run]
               (swap! state-atom assoc
                      :selected-run run
                      :output ""
                      :output-offset 0)
-              (fetch-builds)
+              (fetch-runs)
               (start-polling run)
               (fetch-output run))
             {:body {:key key}
              :error-handler (fn [_error]
                               (swap! state-atom assoc
-                                     :error "could not start build"))}))
+                                     :error "could not start run"))}))
 
 (defn button [label on-click]
   [:div {:style {:background "lightgray"
@@ -116,7 +116,7 @@
     :failed "failed"
     "finished"))
 
-(defn build-script-row [key]
+(defn task-row [key]
   [:div {:style {:display "flex"
                  :justify-content "space-between"
                  :align-items "center"
@@ -127,7 +127,7 @@
    [:strong (name key)]
    [button "Run"
     (fn []
-      (start-build key))]])
+      (start-run key))]])
 
 (defn run-row [run selected-run]
   [:div {:style (merge {:display "flex"
@@ -157,7 +157,7 @@
    output])
 
 (defn root-view []
-  (let [{:keys [build-keys runs selected-run output error]} @state-atom]
+  (let [{:keys [task-keys runs selected-run output error]} @state-atom]
     [:div {:style {:display "flex"
                    :flex-direction "column"
                    :align-items "center"
@@ -179,16 +179,16 @@
                      :display "flex"
                      :flex-direction "column"
                      :gap "10px"}}
-       [:h2 "Build scripts"]
-       (if (empty? build-keys)
-         [:div "No build scripts registered."]
-         (for [key build-keys]
+       [:h2 "Tasks"]
+       (if (empty? task-keys)
+         [:div "No tasks registered."]
+         (for [key task-keys]
            ^{:key (name key)}
-           [build-script-row key]))
+           [task-row key]))
 
-       [:h2 "Builds"]
+       [:h2 "Runs"]
        (if (empty? runs)
-         [:div "No builds yet."]
+         [:div "No runs yet."]
          (for [run runs]
            ^{:key (str (name (:key run)) "-" (:number run))}
            [run-row run selected-run]))]
@@ -199,7 +199,7 @@
                      :gap "10px"}}
        [:h2 (if selected-run
               (str (name (:key selected-run)) " #" (:number selected-run))
-              "Build log")]
+              "Run log")]
        [output-view output]]]]))
 
 ;; this is configured as :after-load in shadow-cljs.edn
@@ -210,4 +210,4 @@
 
 (defn ^:export init! []
   (mount-root)
-  (fetch-builds))
+  (fetch-runs))

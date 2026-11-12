@@ -28,52 +28,52 @@ npx shadow-cljs watch app
 
 Open http://localhost:3000 while the backend is running.
 
-## Build scripts
+## Tasks
 
-Build scripts register themselves in `runthis.build/builds-atom`. The first
-one is `backend/src/test_build.clj`:
+Tasks register themselves in `runthis.run/tasks-atom`. The first task is
+`backend/src/test_task.clj`:
 
 ```clojure
-(ns test-build
+(ns test-task
   (:require
-   [runthis.build :as build]))
+   [runthis.run :as run]))
 
-(defn build [build-directory]
-  (build/run-command! build-directory
-                      "git"
-                      "clone"
-                      "https://github.com/jvillste/runthis.git"
-                      "."))
+(defn execute [run-directory]
+  (run/run-command! run-directory
+                    "git"
+                    "clone"
+                    "https://github.com/jvillste/runthis.git"
+                    "."))
 
-(build/register-build! :runthis build)
+(run/register-task! :runthis execute)
 ```
 
 The JVM cannot reliably change its own working directory, so the runner passes
-the build directory to the build function. `run-command!` runs the command in
-that directory and streams its stdout and stderr into the build log.
+the run directory to the task function. `run-command!` runs the command in that
+directory and streams its stdout and stderr into the run log.
 
-## Build dashboard
+## Run dashboard
 
-The UI lists every registered build script by key. Pressing **Run** creates:
+The UI lists every registered task by key. Pressing **Run** creates:
 
 ```
-builds/<build key>/<build number>/
-builds/<build key>/<build number>.log
+runs/<task key>/<run number>/
+runs/<task key>/<run number>.log
 ```
 
-The build number is the next available number for that key. The UI polls the
-backend while a build is running and appends stdout to the log view. Every log
+The run number is the next available number for that task. The UI polls the
+backend while a run is in progress and appends stdout to the log view. Every log
 on disk is listed, including logs from previous server runs.
 
 ## API
 
 ```
-POST /api/builds
-POST /api/start-build        {:key :runthis}
-POST /api/build-output       {:key :runthis :number 1 :offset 0}
+POST /api/runs
+POST /api/start-run          {:key :runthis}
+POST /api/run-output         {:key :runthis :number 1 :offset 0}
 ```
 
-`/api/build-output` returns the next chunk of output and the current status.
+`/api/run-output` returns the next chunk of output and the current status.
 
 ## Building a single jar
 
