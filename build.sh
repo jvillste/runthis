@@ -13,6 +13,7 @@ mkdir -p "$project_directory/backend/resources"
 cp -R "$project_directory/frontend/public" "$project_directory/backend/resources/public"
 
 cd "$project_directory/backend"
+lein clean
 lein uberjar
 
 jar_path="$(find target/uberjar -maxdepth 1 -name '*-standalone.jar' | head -1)"
