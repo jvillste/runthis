@@ -1,5 +1,6 @@
 (ns runthis.run
   (:require
+   [clojure.edn :as edn]
    [clojure.java.io :as io]
    [clojure.java.process :as process]
    [clojure.test :refer [deftest is]])
@@ -32,8 +33,14 @@
 (defn run-directory [task-id number]
   (io/file runs-directory (task-id-string task-id) (str number)))
 
-(defn log-file [task-id number]
-  (io/file runs-directory (task-id-string task-id) (str number ".log")))
+(defn workspace-directory [task-id number]
+  (io/file (run-directory task-id number) "workspace"))
+
+(defn output-file [task-id number]
+  (io/file (run-directory task-id number) "output.txt"))
+
+(defn metadata-file [task-id number]
+  (io/file (run-directory task-id number) "metadata.edn"))
 
 (defn next-run-number [run-numbers]
   (if (empty? run-numbers)
@@ -52,9 +59,17 @@
   (is (= (io/file "runs" "runthis" "2")
          (run-directory :runthis 2))))
 
-(deftest test-log-file
-  (is (= (io/file "runs" "runthis" "2.log")
-         (log-file :runthis 2))))
+(deftest test-workspace-directory
+  (is (= (io/file "runs" "runthis" "2" "workspace")
+         (workspace-directory :runthis 2))))
+
+(deftest test-output-file
+  (is (= (io/file "runs" "runthis" "2" "output.txt")
+         (output-file :runthis 2))))
+
+(deftest test-metadata-file
+  (is (= (io/file "runs" "runthis" "2" "metadata.edn")
+         (metadata-file :runthis 2))))
 
 (defn directory-files [directory]
   (when (.exists directory)
@@ -75,14 +90,10 @@
     (.mkdirs directory)
     directory))
 
-(defn log-numbers [task-id]
-  (->> (directory-files (io/file runs-directory (task-id-string task-id)))
-       (keep (fn [file]
-               (when-some [[_ number-string] (re-matches #"(\d+)\.log"
-                                                         (.getName file))]
-                 (parse-long number-string))))
-       sort
-       vec))
+(defn create-workspace-directory! [run-directory]
+  (let [directory (io/file run-directory "workspace")]
+    (.mkdirs directory)
+    directory))
 
 (defn task-id-strings []
   (->> (directory-files (io/file runs-directory))
@@ -92,24 +103,36 @@
               (.getName file)))
        sort))
 
+(defn read-metadata [file]
+  (when (.exists file)
+    (try
+      (edn/read-string (slurp file))
+      (catch Throwable _throwable
+        nil))))
+
+(defn write-metadata! [file run]
+  (spit file (pr-str (dissoc run :output))))
+
 (defn run-summary [task-id number]
-  (let [run (get @runs-atom [task-id number])]
+  (let [run (get @runs-atom [task-id number])
+        metadata (when-not run
+                   (read-metadata (metadata-file task-id number)))]
     {:id task-id
      :number number
-     :status (:status run :finished)
+     :status (or (:status run) (:status metadata) :finished)
      :run-directory (str (run-directory task-id number))
-     :log-file (str (log-file task-id number))}))
+     :workspace-directory (str (workspace-directory task-id number))
+     :output-file (str (output-file task-id number))
+     :metadata-file (str (metadata-file task-id number))
+     :started-at (or (:started-at run) (:started-at metadata))
+     :finished-at (or (:finished-at run) (:finished-at metadata))}))
 
 (defn run-identifiers []
-  (let [registered-runs (for [task-id (keys @tasks-atom)
-                              number (log-numbers task-id)]
-                          [task-id number])
-        logged-runs (for [id-string (task-id-strings)
+  (let [stored-runs (for [id-string (task-id-strings)
                           :let [task-id (keyword id-string)]
-                          number (log-numbers task-id)]
+                          number (existing-run-numbers task-id)]
                       [task-id number])]
-    (->> (concat registered-runs
-                 logged-runs
+    (->> (concat stored-runs
                  (keys @runs-atom))
          distinct
          (sort-by (fn [[task-id number]]
@@ -128,8 +151,8 @@
   (when *run-output*
     (*run-output* text)))
 
-(defn run-command! [directory & command]
-  (let [process-handle (apply process/start {:dir directory
+(defn run-command! [workspace-directory & command]
+  (let [process-handle (apply process/start {:dir workspace-directory
                                              :out :pipe
                                              :err :stdout}
                               command)]
@@ -146,23 +169,27 @@
   (let [task-function (get @tasks-atom task-id)]
     (when-not task-function
       (throw (ex-info "unknown task" {:id task-id})))
-    (let [[number run-directory run-log-file]
+    (let [[number run-directory workspace-directory output-file metadata-file]
           (locking run-lock
             (let [number (next-run-number-for-task task-id)
                   run-directory (create-run-directory! task-id number)
-                  run-log-file (log-file task-id number)]
-              [number run-directory run-log-file]))
+                  workspace-directory (create-workspace-directory! run-directory)
+                  output-file (output-file task-id number)
+                  metadata-file (metadata-file task-id number)]
+              [number run-directory workspace-directory output-file metadata-file]))
           run-id [task-id number]
           run {:id task-id
                :number number
                :status :running
                :run-directory (str run-directory)
-               :log-file (str run-log-file)
+               :workspace-directory (str workspace-directory)
+               :output-file (str output-file)
+               :metadata-file (str metadata-file)
                :started-at (str (Instant/now))
                :output ""}]
       (swap! runs-atom assoc run-id run)
       (future
-        (with-open [writer (io/writer run-log-file)]
+        (with-open [writer (io/writer output-file)]
           (let [write! (fn [text]
                          (.write writer text)
                          (.flush writer)
@@ -170,14 +197,16 @@
             (try
               (binding [*run-output* write!]
                 (write! (str "=== run " (task-id-string task-id) " #" number " ===\n"))
-                (task-function run-directory))
+                (task-function workspace-directory))
               (write! "=== run succeeded ===\n")
               (swap! runs-atom assoc-in [run-id :status] :succeeded)
+              (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
+              (write-metadata! metadata-file (get @runs-atom run-id))
               (catch Throwable throwable
                 (write! (str "=== run failed: " (.getMessage throwable) " ===\n"))
-                (swap! runs-atom assoc-in [run-id :status] :failed))
-              (finally
-                (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now))))))))
+                (swap! runs-atom assoc-in [run-id :status] :failed)
+                (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
+                (write-metadata! metadata-file (get @runs-atom run-id)))))))
       (run-summary task-id number))))
 
 (defn start-run! [task-id]
@@ -201,17 +230,20 @@
 
 (defn output-for-run [task-id number offset]
   (let [run-id [task-id number]
-        active-output (get-in @runs-atom [run-id :output])
-        run-log-file (log-file task-id number)
+        run (get @runs-atom run-id)
+        active-output (:output run)
+        run-output-file (output-file task-id number)
         output (if (some? active-output)
                  active-output
-                 (if (.exists run-log-file)
-                   (slurp run-log-file)
+                 (if (.exists run-output-file)
+                   (slurp run-output-file)
                    ""))
         offset (normalize-offset offset)
-        next-offset (count output)]
+        next-offset (count output)
+        metadata (when-not run
+                   (read-metadata (metadata-file task-id number)))]
     {:id task-id
      :number number
      :output (subs output (min offset next-offset))
      :next-offset next-offset
-     :status (get-in @runs-atom [run-id :status] :finished)}))
+     :status (or (:status run) (:status metadata) :finished)}))

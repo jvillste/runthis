@@ -25,29 +25,34 @@ Tasks are Clojure namespaces that register a function with
   (:require
    [runthis.run :as run]))
 
-(defn execute [run-directory]
-  (run/run-command! run-directory "make"))
+(defn execute [workspace-directory]
+  (run/run-command! workspace-directory "make"))
 
 (run/register-task! :my-task execute)
 ```
 
-The task function receives the run directory. `run-command!` runs a command in
-that directory and streams stdout and stderr into the run log.
+The task function receives the workspace directory. `run-command!` runs a
+command in that workspace and streams stdout and stderr into the run output.
 
 The first task is `src/test_task.clj`. It clones
-`https://github.com/jvillste/runthis.git` into the run directory.
+`https://github.com/jvillste/runthis.git` into the workspace directory.
 
-## Run directories and logs
+## Run directories
 
 Each run creates:
 
 ```
 runs/<task id>/<run number>/
-runs/<task id>/<run number>.log
+runs/<task id>/<run number>/workspace/
+runs/<task id>/<run number>/output.txt
+runs/<task id>/<run number>/metadata.edn
 ```
 
-The run number is the next available number for that task. Logs from all runs
-remain under `runs/` and are listed by the UI.
+`workspace/` is where the task runs its commands. `output.txt` contains stdout
+and stderr. `metadata.edn` contains the final run state after the task finishes.
+
+The run number is the next available number for that task. Runs from all
+previous server starts remain under `runs/` and are listed by the UI.
 
 ## API
 

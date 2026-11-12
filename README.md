@@ -38,8 +38,8 @@ Tasks register themselves in `runthis.run/tasks-atom`. The first task is
   (:require
    [runthis.run :as run]))
 
-(defn execute [run-directory]
-  (run/run-command! run-directory
+(defn execute [workspace-directory]
+  (run/run-command! workspace-directory
                     "git"
                     "clone"
                     "https://github.com/jvillste/runthis.git"
@@ -49,8 +49,8 @@ Tasks register themselves in `runthis.run/tasks-atom`. The first task is
 ```
 
 The JVM cannot reliably change its own working directory, so the runner passes
-the run directory to the task function. `run-command!` runs the command in that
-directory and streams its stdout and stderr into the run log.
+the workspace directory to the task function. `run-command!` runs the command
+in that workspace and streams its stdout and stderr into the run output.
 
 ## Run dashboard
 
@@ -66,12 +66,17 @@ for that task, and the selected run's log. Pressing **Run** creates:
 
 ```
 runs/<task id>/<run number>/
-runs/<task id>/<run number>.log
+runs/<task id>/<run number>/workspace/
+runs/<task id>/<run number>/output.txt
+runs/<task id>/<run number>/metadata.edn
 ```
+
+`workspace/` is where the task runs its commands. `output.txt` contains stdout
+and stderr. `metadata.edn` contains the final run state after the task finishes.
 
 The run number is the next available number for that task. The UI polls the
 backend while a run is in progress and appends stdout to the log view. Every
-log on disk is listed, including logs from previous server runs.
+run on disk is listed, including runs from previous server starts.
 
 ## API
 
