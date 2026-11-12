@@ -16,6 +16,8 @@
 
 (defonce match-atom (reagent/atom nil))
 (defonce poll-timer-atom (atom nil))
+(defonce clock-atom (reagent/atom (js/Date.now)))
+(defonce clock-timer-atom (atom nil))
 
 (defn call-api [uri handler & [{:keys [body error-handler]}]]
   (ajax/POST uri
@@ -46,6 +48,21 @@
             {:error-handler (fn [_error]
                               (swap! state-atom assoc
                                      :error "could not load runs"))}))
+
+(defn any-running-run? []
+  (or (some (fn [run]
+              (= :running (:status run)))
+            (:runs @state-atom))
+      (= :running (:status (:selected-run @state-atom)))))
+
+(defn start-clock []
+  (when-not @clock-timer-atom
+    (reset! clock-timer-atom
+            (js/setInterval (fn []
+                              (when (any-running-run?)
+                                (reset! clock-atom (js/Date.now))
+                                (fetch-runs)))
+                            1000))))
 
 (defn fetch-output [run]
   (call-api "/api/run-output"
@@ -138,6 +155,29 @@
     :failed "failed"
     "finished"))
 
+(defn run-duration-milliseconds [run]
+  (when-some [started-at-string (:started-at run)]
+    (let [started-at (js/Date.parse started-at-string)
+          finished-at (if-some [finished-at-string (:finished-at run)]
+                        (js/Date.parse finished-at-string)
+                        @clock-atom)]
+      (when (and (not (js/isNaN started-at))
+                 (not (js/isNaN finished-at)))
+        (- finished-at started-at)))))
+
+(defn format-duration [milliseconds]
+  (when (some? milliseconds)
+    (if (< milliseconds 1000)
+      "<1s"
+      (let [total-seconds (quot milliseconds 1000)
+            hours (quot total-seconds 3600)
+            minutes (quot (mod total-seconds 3600) 60)
+            seconds (mod total-seconds 60)]
+        (cond
+          (pos? hours) (str hours "h " minutes "m " seconds "s")
+          (pos? minutes) (str minutes "m " seconds "s")
+          :else (str seconds "s"))))))
+
 (defn task-link [task-id]
   [:a {:href (easy/href ::task {:task-id (name task-id)})
        :style {:display "block"
@@ -160,9 +200,12 @@
                          {:background "lightblue"}))
          :onClick (fn []
                     (select-run run))}
-   [:div (str (name (:id run)) " #" (:number run))]
+   [:div (str "#" (:number run))]
    [:div {:style {:color "gray"}}
-    (status-label (:status run))]])
+    (str (or (format-duration (run-duration-milliseconds run))
+             "—")
+         " · "
+         (status-label (:status run)))]])
 
 (defn output-view [output]
   [:pre {:style {:background "#111"
@@ -289,4 +332,5 @@
                    (initialize match)))
                {:use-fragment false})
   (mount-root)
-  (fetch-runs))
+  (fetch-runs)
+  (start-clock))
