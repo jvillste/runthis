@@ -51,6 +51,7 @@ Tasks register themselves in `runthis.run/tasks-atom`. The first task is
 The JVM cannot reliably change its own working directory, so the runner passes
 the workspace directory to the task function. `run-command!` runs the command
 in that workspace and streams its stdout and stderr into the run output.
+`println` calls in the task function are written to the run output as well.
 
 ## Run dashboard
 

@@ -5,6 +5,8 @@
    [clojure.java.process :as process]
    [clojure.test :refer [deftest is]])
   (:import
+   (java.io OutputStream PrintWriter)
+   (java.nio.charset StandardCharsets)
    (java.time Instant)))
 
 (def runs-directory "runs")
@@ -151,6 +153,35 @@
   (when *run-output*
     (*run-output* text)))
 
+(defn task-output-stream [write!]
+  (proxy [OutputStream] []
+    (write
+      ([value]
+       (if (bytes? value)
+         (write! (String. ^bytes value StandardCharsets/UTF_8))
+         (write! (String. (byte-array [(byte value)]) StandardCharsets/UTF_8))))
+      ([bytes offset length]
+       (write! (String. ^bytes bytes (int offset) (int length) StandardCharsets/UTF_8))))))
+
+(deftest test-task-output-stream
+  (let [output (atom "")
+        stream (task-output-stream (fn [text]
+                                     (swap! output str text)))]
+    (.write stream (.getBytes "hello" StandardCharsets/UTF_8))
+    (is (= "hello"
+           @output))))
+
+(defn task-output-writer [write!]
+  (PrintWriter. (task-output-stream write!) true))
+
+(deftest test-task-output-writer
+  (let [output (atom "")
+        writer (task-output-writer (fn [text]
+                                     (swap! output str text)))]
+    (.println writer "hello")
+    (is (= "hello\n"
+           @output))))
+
 (defn run-command! [workspace-directory & command]
   (let [process-handle (apply process/start {:dir workspace-directory
                                              :out :pipe
@@ -194,17 +225,21 @@
                          (.write writer text)
                          (.flush writer)
                          (swap! runs-atom update-in [run-id :output] (fnil str "") text))]
-            (try
-              (binding [*run-output* write!]
-                (task-function workspace-directory))
-              (swap! runs-atom assoc-in [run-id :status] :succeeded)
-              (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
-              (write-metadata! metadata-file (get @runs-atom run-id))
-              (catch Throwable throwable
-                (swap! runs-atom assoc-in [run-id :status] :failed)
-                (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable))
+            (let [task-writer (task-output-writer write!)]
+              (try
+                (binding [*run-output* write!
+                          *out* task-writer]
+                  (task-function workspace-directory))
+                (swap! runs-atom assoc-in [run-id :status] :succeeded)
                 (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
-                (write-metadata! metadata-file (get @runs-atom run-id)))))))
+                (write-metadata! metadata-file (get @runs-atom run-id))
+                (catch Throwable throwable
+                  (swap! runs-atom assoc-in [run-id :status] :failed)
+                  (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable))
+                  (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
+                  (write-metadata! metadata-file (get @runs-atom run-id)))
+                (finally
+                  (.flush task-writer)))))))
       (run-summary task-id number))))
 
 (defn start-run! [task-id]
