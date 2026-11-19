@@ -13,9 +13,13 @@
 
 (defonce tasks-atom (atom {}))
 (defonce runs-atom (atom {}))
+(defonce run-cancellations-atom (atom {}))
+(defonce run-futures-atom (atom {}))
+(defonce run-cancelled-atom (atom #{}))
 (defonce run-lock (Object.))
 
 (def ^:dynamic *run-output* nil)
+(def ^:dynamic *register-cancellation* nil)
 
 (defn register-task! [task-id function]
   (swap! tasks-atom assoc task-id function))
@@ -187,6 +191,9 @@
                                              :out :pipe
                                              :err :stdout}
                               command)]
+    (when *register-cancellation*
+      (*register-cancellation* (fn []
+                                 (.destroyForcibly ^java.lang.Process process-handle))))
     (with-open [reader (io/reader (process/stdout process-handle))]
       (doseq [line (line-seq reader)]
         (write-output! (str line "\n"))))
@@ -195,6 +202,37 @@
         (throw (ex-info (str "command failed with exit value " exit-value)
                         {:command command
                          :exit-value exit-value}))))))
+
+(defn finished-status [cancelled? throwable]
+  (cond
+    cancelled? :cancelled
+    throwable :failed
+    :else :succeeded))
+
+(deftest test-finished-status
+  (is (= :succeeded
+         (finished-status false nil)))
+  (is (= :failed
+         (finished-status false (ex-info "boom" {}))))
+  (is (= :cancelled
+         (finished-status true (ex-info "boom" {})))))
+
+(defn record-run-finish! [run-id metadata-file cancelled? throwable]
+  (swap! runs-atom assoc-in [run-id :status] (finished-status cancelled? throwable))
+  (when cancelled?
+    (swap! runs-atom update run-id dissoc :error))
+  (when throwable
+    (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable)))
+  (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
+  (write-metadata! metadata-file (get @runs-atom run-id)))
+
+(defn register-run-cancellation! [run-id cancel!]
+  (swap! run-cancellations-atom update run-id (fnil conj []) cancel!))
+
+(defn record-cancellation-request! [run-id metadata-file]
+  (swap! runs-atom assoc-in [run-id :status] :cancelled)
+  (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
+  (write-metadata! metadata-file (get @runs-atom run-id)))
 
 (defn run-task! [task-id]
   (let [task-function (get @tasks-atom task-id)]
@@ -219,28 +257,57 @@
                :started-at (str (Instant/now))
                :output ""}]
       (swap! runs-atom assoc run-id run)
-      (future
-        (with-open [writer (io/writer output-file)]
-          (let [write! (fn [text]
-                         (.write writer text)
-                         (.flush writer)
-                         (swap! runs-atom update-in [run-id :output] (fnil str "") text))]
-            (let [task-writer (task-output-writer write!)]
-              (try
-                (binding [*run-output* write!
-                          *out* task-writer]
-                  (task-function workspace-directory))
-                (swap! runs-atom assoc-in [run-id :status] :succeeded)
-                (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
-                (write-metadata! metadata-file (get @runs-atom run-id))
-                (catch Throwable throwable
-                  (swap! runs-atom assoc-in [run-id :status] :failed)
-                  (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable))
-                  (swap! runs-atom assoc-in [run-id :finished-at] (str (Instant/now)))
-                  (write-metadata! metadata-file (get @runs-atom run-id)))
-                (finally
-                  (.flush task-writer)))))))
+      (let [run-future
+            (future
+              (with-open [writer (io/writer output-file)]
+                (let [write! (fn [text]
+                               (when (= :running (:status (get @runs-atom run-id)))
+                                 (.write writer text)
+                                 (.flush writer)
+                                 (swap! runs-atom update-in [run-id :output] (fnil str "") text)))
+                      task-writer (task-output-writer write!)]
+                  (try
+                    (binding [*run-output* write!
+                              *out* task-writer
+                              *register-cancellation* (fn [cancel!]
+                                                        (register-run-cancellation! run-id cancel!))]
+                      (task-function workspace-directory))
+                    (catch Throwable throwable
+                      (swap! runs-atom assoc-in [run-id :error] (.getMessage throwable)))
+                    (finally
+                      (.flush task-writer)
+                      (record-run-finish! run-id metadata-file
+                                          (contains? @run-cancelled-atom run-id)
+                                          nil)
+                      (swap! run-cancellations-atom dissoc run-id)
+                      (swap! run-cancelled-atom disj run-id)
+                      (swap! run-futures-atom dissoc run-id))))))]
+        (swap! run-futures-atom assoc run-id run-future)
+        (when (future-done? run-future)
+          (swap! run-futures-atom dissoc run-id)))
       (run-summary task-id number))))
+
+(defn running-run? [task-id number]
+  (= :running (:status (run-summary task-id number))))
+
+(defn cancel-run! [task-id number]
+  (let [run-id [task-id number]]
+    (when-not (running-run? task-id number)
+      (throw (ex-info "run is not running" {:id task-id :number number})))
+    (swap! run-cancelled-atom conj run-id)
+    (record-cancellation-request! run-id (metadata-file task-id number))
+    (doseq [cancel! (get @run-cancellations-atom run-id)]
+      (try
+        (cancel!)
+        (catch Throwable _throwable
+          nil)))
+    (when-some [run-future (get @run-futures-atom run-id)]
+      (future-cancel run-future))
+    (run-summary task-id number)))
+
+(deftest test-cancel-run-for-finished-run
+  (is (thrown? clojure.lang.ExceptionInfo
+               (cancel-run! :missing-task 999))))
 
 (defn start-run! [task-id]
   (when-not (task-exists? task-id)

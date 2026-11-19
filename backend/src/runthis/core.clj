@@ -67,6 +67,21 @@
       (assoc (transit-response {:error "unknown task"})
              :status 400))))
 
+(defn cancel-run-handler [request]
+  (let [{:keys [id number]} (read-transit-body request)
+        task-id (run/normalize-task-id id)
+        number (if (string? number)
+                 (parse-long number)
+                 number)]
+    (if (and task-id (number? number))
+      (try
+        (transit-response (run/cancel-run! task-id number))
+        (catch clojure.lang.ExceptionInfo exception-info
+          (assoc (transit-response {:error (.getMessage exception-info)})
+                 :status 409)))
+      (assoc (transit-response {:error "task id and run number are required"})
+             :status 400))))
+
 (defn run-output-handler [request]
   (let [{:keys [id number offset]} (read-transit-body request)
         task-id (run/normalize-task-id id)
@@ -109,6 +124,7 @@
                  (wrap-api-method "/api/get-hello" hello-handler)
                  (wrap-api-method "/api/runs" run-list-handler)
                  (wrap-api-method "/api/start-run" start-run-handler)
+                 (wrap-api-method "/api/cancel-run" cancel-run-handler)
                  (wrap-api-method "/api/run-output" run-output-handler)))
 
 (defonce server-atom (atom nil))

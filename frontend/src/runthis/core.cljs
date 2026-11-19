@@ -120,6 +120,17 @@
                               (swap! state-atom assoc
                                      :error "could not start run"))}))
 
+(defn cancel-run [run]
+  (swap! state-atom assoc :error nil)
+  (call-api "/api/cancel-run"
+            (fn [_run]
+              (fetch-runs))
+            {:body {:id (:id run)
+                    :number (:number run)}
+             :error-handler (fn [_error]
+                              (swap! state-atom assoc
+                                     :error "could not cancel run"))}))
+
 (defn task-id-from-match [match]
   (when-some [task-id-string (get-in match [:parameters :path :task-id])]
     (keyword task-id-string)))
@@ -148,11 +159,23 @@
          :onClick on-click}
    label])
 
+(defn toggle-run-button [task-id task-runs]
+  (if-some [running-run (last (filter (fn [run]
+                                       (= :running (:status run)))
+                                     task-runs))]
+    [button "Cancel"
+     (fn []
+       (cancel-run running-run))]
+    [button "Run"
+     (fn []
+       (start-run task-id))]))
+
 (defn status-label [status]
   (case status
     :running "running"
     :succeeded "succeeded"
     :failed "failed"
+    :cancelled "cancelled"
     "finished"))
 
 (defn run-duration-milliseconds [run]
@@ -308,9 +331,7 @@
                        :justify-content "space-between"
                        :align-items "center"}}
          [:h1 (name task-id)]
-         [button "Run"
-          (fn []
-            (start-run task-id))]]
+         [toggle-run-button task-id task-runs]]
 
         [:div {:style {:display "flex"
                        :gap "30px"

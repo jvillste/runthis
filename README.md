@@ -84,10 +84,12 @@ run on disk is listed, including runs from previous server starts.
 ```
 POST /api/runs
 POST /api/start-run          {:id :runthis}
+POST /api/cancel-run         {:id :runthis :number 1}
 POST /api/run-output         {:id :runthis :number 1 :offset 0}
 ```
 
 `/api/run-output` returns the next chunk of output and the current status.
+`/api/cancel-run` stops a running run and marks it `:cancelled`.
 
 ## Building a single jar
 
